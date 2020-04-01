@@ -7,9 +7,7 @@ This repository contains two folders and one file:
 * twoPhaseGAS_1.05.tar.gz
 
 ### Sim2_PracticalScenario
-Contains the necessary codes and information to reproduce the results in Section 4 of the manuscript. The main code is "Realistic_Simulation.R" while files "Step_[1-4].R" contain the auxiliary functions with the details of each step.
-File "data_Realistic_R=1K_N=5K.RData" contains the exact information used in the simulation.  
-On the other hand files "genetic_map_GRCh37_chr16.txt.gz" and "EUR.chr16.HERPUD1-CETP.genotypes.vcf.gz" can be used to generate a new set of replicates.
+Contains the necessary codes and information to reproduce the results in Section 4 of the manuscript. The main code is "Realistic_Simulation.R" while files "Step_[1-4].R" contain the auxiliary functions with the details of each step. These scripts rely on file "data_Realistic_R=1K_N=5K.RData", which containts the simulation resplicates, to fully reproduce the results from the manuscript. This file is available as Supplementary Data along with the manuscript. However, the file can be generated using script "Step_0_Data_generation.R", although the results will not be fully reproducible. Files "genetic_map_GRCh37_chr16.txt.gz" and "EUR.chr16.HERPUD1-CETP.genotypes.vcf.gz" can be used to generate such new set of replicates. 
 
 ### App_NFBC66
 This folder contains detailed bash scripts and R codes that describe the analysis steps for the illustration on the North Finland
