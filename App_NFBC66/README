@@ -1,0 +1,37 @@
+The provided scripts assume that one has access and has already downloaded the NFBC66 data from dbGaP (https://www.ncbi.nlm.nih.gov/projects/gap/cgi-bin/study.cgi?study_id=phs000276.v2.p1).
+
+These data consist of three parts: phenotypes, genotypes and targeted sequencing.
+
+Phenotypes and genotypes can be accessed through NCBI once the access has been granted. Phenotype data are stored in text format whereas genotyping data are stored in PLINK format.
+Sequence data can be accessed in FASTQ or BAM formats per individual sample identifier using the corresponding SRR number. Moreover, to avoid downloading all availabe reads, we focus only on the loci of interest: GCKR, LPL, APOA1 and APOA5.
+
+The SRA Toolkit (https://trace.ncbi.nlm.nih.gov/Traces/sra/sra.cgi?view=software) can be used to facilitate the downloads.
+
+### download gene GCKR in chrom 2 for triglycerides (hit in the GWAS and sequenced) https://www.ncbi.nlm.nih.gov/gene/2646
+# 109.20191205 	current 	GRCh38.p13 (GCF_000001405.39) 	2 	NC_000002.12 (27496839..27523689)
+# 105 	previous assembly 	GRCh37.p13 (GCF_000001405.25) 	2 	NC_000002.11 (27719470..27746556) 
+lo=$((27719470-5000))
+up=$((27746556+5000))
+sam-dump --aligned-region 2:${lo}-${up} $srr | samtools view -bS - > ./bam/${srr}_GCKR_aligned.bam
+
+### download gene LPL in chrom 8 for triglycerides (hit in the GWAS and sequenced) https://www.ncbi.nlm.nih.gov/gene/4023
+# 109.20190607 	current 	GRCh38.p13 (GCF_000001405.39) 	8 	NC_000008.11 (19939253..19967259)
+# 105 	previous assembly 	GRCh37.p13 (GCF_000001405.25) 	8 	NC_000008.10 (19796582..19824770) 
+lo=$((19796582-5000))
+up=$((19824770+5000))
+sam-dump --aligned-region 8:${lo}-${up} $srr | samtools view -bS - > ./bam/${srr}_LPL_aligned.bam
+
+
+### gene APOA1 in chrom 11 for triglycerides (hit in the GWAS and sequenced) https://www.ncbi.nlm.nih.gov/gene/335
+# 109.20190607 	current 	GRCh38.p13 (GCF_000001405.39) 	11 	NC_000011.10 (116835751..116837950, complement)
+# 105 	previous assembly 	GRCh37.p13 (GCF_000001405.25) 	11 	NC_000011.9 (116706467..116708338, complement) 
+lo=$((116706467-5000))
+up=$((116708338+5000))
+sam-dump --aligned-region 11:${lo}-${up} $srr | samtools view -bS - > ./bam/${srr}_APOA1_aligned.bam
+
+## gene APOA5 in chrom 11 for triglycerides (hit in the GWAS and sequenced) https://www.ncbi.nlm.nih.gov/gene/116519
+# 109.20190607 	current 	GRCh38.p13 (GCF_000001405.39) 	11 	NC_000011.10 (116789367..116792420, complement)
+# 105 	previous assembly 	GRCh37.p13 (GCF_000001405.25) 	11 	NC_000011.9 (116660086..116663136, complement) 
+lo=$((116660086-5000))
+up=$((116663136+5000))
+sam-dump --aligned-region 11:${lo}-${up} $srr | samtools view -bS - > ./bam/${srr}_APOA5_aligned.bam
