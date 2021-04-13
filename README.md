@@ -1,4 +1,4 @@
-# OptTwoPhase_postGWAS
+# TwoPhase_postGWAS
 R code for selected results from "Two-phase sample selection strategies for design and analysis in post-genome wide association fine-mapping studies"
 
 This repository contains one file and two folders:
