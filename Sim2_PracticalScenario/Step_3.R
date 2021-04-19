@@ -4,7 +4,6 @@ formula_Ho <- Y~fZ
 formula_Ho1 <- Y~Gcond+fZ
 formula_Ho2 <- Y~G+fZ
 
-
 ### define function to perform multiple df. score test (extending glm.scoretest from statmod)
 glm.scoretest.multidf <- function(fit, x2, dispersion = NULL) {
   w <- fit$weights
@@ -48,16 +47,11 @@ glm.scoretest.multidf <- function(fit, x2, dispersion = NULL) {
   return( as.numeric(t(U) %*% solve( V1 ) %*% U) )
 }
 
-### identify the SNP with minimum p-value (or equivalently the maximum test statistic) for each iteration and design
-max_S <- aggregate(resOpt_single$S,by=list(it=resOpt_single$it,Alloc=resOpt_single$Alloc), FUN=max)
-Gmax <- merge(resOpt_single[,c(c("it","Alloc","S","p","Gpos"))], max_S, by.x=c("it","Alloc","S"),by.y=c("it","Alloc","x"))
-Gmax <- Gmax[order(Gmax$it),]
-
 namscols <- c("beta1","beta2_cond","var_beta1","var_beta2_cond","W2df","S2df","LR2df", "W_G","S_G","LR_G", "W_Gcond","S_Gcond","LR_Gcond")
 res_NULL <- rep(NA,13); names(res_NULL) <- namscols
 
 resOpt_conditional <- foreach(G=iter(genotype_noZ,by='column'), p=icount(), .combine='rbind', .verbose=T) %:%
-  foreach(data_iter=isplit( dat_sim_all, list(it=dat_sim_all$iteration) ), ids_iter=isplit( dat_ids_all, list(it=dat_ids_all$it) ), .combine='rbind', .inorder=F, .verbose=T, .packages = c("MASS","statmod","Matrix","data.table","enrichwith","aod","twoPhaseGAS")) %dopar% {
+  foreach(data_iter=isplit( dat_sim_all, list(it=dat_sim_all$iteration) ), ids_iter=isplit( dat_ids_all, list(it=dat_ids_all$it) ), .combine='rbind', .inorder=F, .verbose=T, .packages = c("statmod","twoPhaseGAS","aod")) %dopar% {
     
     it <- paste(data_iter$key,collapse="_")
     dat_sim0 <- data_iter$value
@@ -65,21 +59,19 @@ resOpt_conditional <- foreach(G=iter(genotype_noZ,by='column'), p=icount(), .com
     it_idx <- paste(ids_iter$key,collapse="_")
     indx_it <- ids_iter$value
     
-    condGs <- Gmax[Gmax$it==it,]
-    condGs <- condGs[match(c("Complete","Combined","RDS","TZL","Opt.Lagr","Opt.GA"),condGs$Alloc),]
-    condGs$Gpos <- as.character(condGs$Gpos)
-    uniqcondGs <- unique(condGs$Gpos)
+    ### Use variant 56989830 as Gtop for all snps
+    uniqcondGs <- "56989830"
     condGs_mat <- genotype_noZ[,uniqcondGs,drop=FALSE]
     
     Gnam <- colnames(G) 
-    if ( all(uniqcondGs==Gnam) ) return( data.frame(p=p,Gpos=Gnam,Gcond=condGs$Gpos,samp=sampl,ss=n2,it=as.integer(it),itidx=as.integer(it_idx),Alloc=c("Complete","Combined","RDS","TZL","Opt.Lagr","Opt.GA"),rbind(res_NULL,res_NULL,res_NULL,res_NULL,res_NULL,res_NULL)) )
+    if ( all(uniqcondGs==Gnam) ) return( data.frame(p=p,Gpos=Gnam,Gcond=56989830,samp=sampl,ss=n2,it=as.integer(it),itidx=as.integer(it_idx),Alloc=c("Complete","Combined","RDS","TZL","LM","GA"),rbind(res_NULL,res_NULL,res_NULL,res_NULL,res_NULL,res_NULL)) )
     
     colnames(G) <- "G"
     dat_sim <- cbind(dat_sim0,Z=Z,G,condGs_mat)
     dat_sim$fZ <- factor(dat_sim$Z)
     
     ## Complete data analysis 
-    Gpos.Complete <- condGs$Gpos[condGs$Alloc=="Complete"]
+    Gpos.Complete <- "56989830"
     if( Gnam != Gpos.Complete ){
       names(dat_sim)[which(names(dat_sim)==Gpos.Complete)] <- "Gcond"
       lmfit.com <- glm(formula_Ha, data=dat_sim, family=gaussian) 
@@ -106,17 +98,17 @@ resOpt_conditional <- foreach(G=iter(genotype_noZ,by='column'), p=icount(), .com
     }else out_com <- res_NULL
     
     
-    ### Extract ids
+    ### extract ids
     R0 <- unlist(indx_it$R0)
     R1 <- unlist(indx_it$R1)
     R2 <- unlist(indx_it$R2)
     R3 <- unlist(indx_it$R3)
     R4 <- unlist(indx_it$R4)
     
-    ### SPML analyses
+    ### Analysis of all allocations in a loop
     for( i in c(0:4)){ # i=1
-      des = c("Combined","RDS","TZL","Opt.Lagr","Opt.GA")[i+1]
-      Gpos.des <- condGs$Gpos[condGs$Alloc==des]
+      des = c("Combined","RDS","TZL","LM","GA")[i+1]
+      Gpos.des <- "56989830"
       
       if( Gnam != Gpos.des ){
         names(dat_sim)[which(names(dat_sim)==Gpos.des)] <- "Gcond"
@@ -149,10 +141,11 @@ resOpt_conditional <- foreach(G=iter(genotype_noZ,by='column'), p=icount(), .com
       
     }
     
-    res <- data.frame(p=p,Gpos=Gnam,Gcond=condGs$Gpos,samp=sampl,ss=n2,it=as.integer(it),itidx=as.integer(it_idx),Alloc=c("Complete","Combined","RDS","TZL","Opt.Lagr","Opt.GA"),rbind(out_com,res0,res1,res2,res3,res4))
+    res <- data.frame(p=p,Gpos=Gnam,Gcond=56989830,samp=sampl,ss=n2,it=as.integer(it),itidx=as.integer(it_idx),Alloc=c("Complete","Combined","RDS","TZL","LM","GA"),rbind(out_com,res0,res1,res2,res3,res4))
+    
     
     return(res)    
-  } 
+} 
 
 
 if( save_ind ) save(resOpt_conditional,file=paste0(savedir,"RealisticMultiDesBeta1_ss",n2,"_samp=",sampl,"_N=5K_R=",ifelse(Rep>=1000,paste0(Rep/1000,"K"),Rep),"_",optMetout,"_CondAnalysis.RData"))

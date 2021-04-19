@@ -46,10 +46,10 @@ resOpt_single <- foreach(G=iter(genotype_noZ,by='column'), p=icount(), .combine=
     names(out_com)<-c("beta1","var_beta1","W","S","LR")
     
     
-    res <- data.frame(p=p,Gpos=Gnam,samp=sampl,ss=n2,it=as.integer(it),itidx=as.integer(it_idx),Alloc=c("Complete","Combined","RDS","TZL","Opt.Lagr","Opt.GA"),rbind(out_com,res0,res1,res2,res3,res4))
+    res <- data.frame(p=p,Gpos=Gnam,samp=sampl,ss=n2,it=as.integer(it),itidx=as.integer(it_idx),Alloc=c("Complete","Combined","RDS","TZL","LM","GA"),rbind(out_com,res0,res1,res2,res3,res4))
     
     return(res)    
   } 
 
 
-if( save_ind ) save(resOpt_single,dat_alloc,file=paste0(savedir,"RealisticMultiDesBeta1_ss",n2,"_samp=",sampl,"_N=5K_R=",ifelse(Rep>=1000,paste0(Rep/1000,"K"),Rep),"_",optMetout,"_SingleSNP.RData")) 
+if( save_ind ) save(resOpt_single,file=paste0(savedir,"RealisticMultiDesBeta1_ss",n2,"_samp=",sampl,"_N=5K_R=",ifelse(Rep>=1000,paste0(Rep/1000,"K"),Rep),"_",optMetout,"_SingleSNP.RData")) 

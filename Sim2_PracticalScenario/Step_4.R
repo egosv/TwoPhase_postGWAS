@@ -5,8 +5,9 @@ library(vcd)
 library(gridExtra)
 library(RColorBrewer) 
 library(data.table)
+library(UpSetR)
 
-### Prepare auxiliary information ----
+# Prepare auxiliary information ----
 
 ### Set up the true values for Beta (as designed in Step_optional_Data_generation.R)
 Betas_df <- data.frame(Gpos=c("56993324","56995236","56989830","56994990"),Beta1=c(0.125,-0.15,-0.20,0.25))
@@ -51,7 +52,7 @@ reg_sum$ID <- sapply(reg_sum$ID0,function(s){
   subset(reg_sum,grepl("[*]",ID))[,c("ID0","MAF","r","r2","Dpr")]
 } 
 
-### Allocation plots ----
+# Allocation plots ----
 #* Data prep ----
 {
   ### dat_alloc is one output of Step_1.R 
@@ -64,8 +65,31 @@ reg_sum$ID <- sapply(reg_sum$ID0,function(s){
   indx_tot1_sim2_mosaic$Z <- gsub("Z","",sapply(strata,`[[`,1))
   indx_tot1_sim2_mosaic$Yst <- sapply(strata,`[[`,2)
 
-  indx_tot1_sim2_mosaic$alloc <- factor(indx_tot1_sim2_mosaic$alloc,levels = c("Opt.Lagr", "Opt.GA", "Combined", "RDS", "TZL","Complete"))
+  indx_tot1_sim2_mosaic$alloc <- factor(indx_tot1_sim2_mosaic$alloc,levels = c("LM", "GA", "Combined", "RDS", "TZL","Complete"))
   indx_tot1_sim2_mosaic$alloc <- factor(indx_tot1_sim2_mosaic$alloc)
+  
+  f_dat_intersection <- function(dat_ids){
+    
+    res <- rbindlist(lapply(1:Rep,function(ii){
+      dat_sim0 <- subset(dat_sim_all, iteration==ii)
+      dat_sim <- cbind(it=ii,ID=1:nrow(dat_sim0),dat_sim0,Z=Z)
+      dat_sim$fZ <- factor(dat_sim$Z)
+      data <- dat_sim[,c("it","ID","Y","Z","fZ","S")]
+      indx_it <- subset(dat_ids,it==ii)
+      data$R0 <- unlist(indx_it$R0)
+      data$R1 <- unlist(indx_it$R1)
+      data$R2 <- unlist(indx_it$R2)
+      data$R3 <- unlist(indx_it$R3)
+      data$R4 <- unlist(indx_it$R4)
+      # R cols: "Combined","RDS","TZL","LM","GA"
+      return(data)
+    }))
+    
+    return(res)
+  }
+  ### dat_ids_all is one output of Step_1.R
+  dat_inter <- f_dat_intersection(dat_ids_all)
+  inter_tot_sim2 <- data.frame(N=N,n=n2,OptCriterion=optMethod,dat_inter)
 }
 #* Mosaic plots ----
 {
@@ -73,23 +97,39 @@ reg_sum$ID <- sapply(reg_sum$ID0,function(s){
   
   vnames <- list(set_varnames = c(ss="",OptCriterion="",alloc=""))
   vnames1 <- list(set_varnames = c(ss="",OptCriterion="",alloc="", Z=""))
-  lnames <- list(ss = c("540","1.25K","2.5K"), Yst=c(expression(T["1"]),expression(T["2"]),expression(T["3"])), OptCriterion = c("A-opt","D-opt","Par-spec"),alloc=c("LM","GA","Comb","RDS","TZL","Comp"))
-  lnames1 <- list(ss = c("540","1.25K","2.5K"), Yst=c(expression(T["1"]),expression(T["2"]),expression(T["3"])), OptCriterion = c("A-opt","D-opt","Par-spec"),alloc=rep("",5))
-  
-  n1 <- grid.grabExpr(mosaic(xtabs(value ~ alloc + Yst + Z, droplevels(subset(indx_tot1_sim2_mosaic,ss==540 & alloc!="Complete"))), zero_size = 0, main="540", labeling_args=vnames1, set_labels=lnames, keep_aspect_ratio=FALSE, margins=unit(c(2.5,2.5,0.5,2.5), "lines"), highlighting=3, highlighting_fill = PaletteAlloc, main_gp = gpar(fontsize = 14)))
+  lnames <- list(ss = c("1.25K","2.5K"), Yst=c(expression(T["1"]),expression(T["2"]),expression(T["3"])), OptCriterion = c("A-opt","D-opt","Par-spec"),alloc=c("LM","GA","Comb","RDS","TZL","Comp"))
+  lnames1 <- list(ss = c("1.25K","2.5K"), Yst=c(expression(T["1"]),expression(T["2"]),expression(T["3"])), OptCriterion = c("A-opt","D-opt","Par-spec"),alloc=rep("",5))
   
   n2 <- grid.grabExpr(mosaic(xtabs(value ~ alloc + Yst + Z, droplevels(subset(indx_tot1_sim2_mosaic,ss==1250 & alloc!="Complete"))), zero_size = 0, main="1250", labeling_args=vnames1, set_labels=lnames1, keep_aspect_ratio=FALSE, margins=unit(c(2.5,2.5,0.5,2.5), "lines"), highlighting=3, highlighting_fill = PaletteAlloc, main_gp = gpar(fontsize = 14)))
   
   n3 <- grid.grabExpr(mosaic(xtabs(value ~ alloc + Yst + Z, droplevels(subset(indx_tot1_sim2_mosaic,ss==2500 & alloc!="Complete"))), zero_size = 0, main="2500", labeling_args=vnames, set_labels=lnames1, keep_aspect_ratio=FALSE, margins=unit(c(2.5,2.5,0.5,2.5), "lines"), highlighting=3, highlighting_fill = PaletteAlloc, main_gp = gpar(fontsize = 14)))
   
   
-  obj <- grid.arrange(n1, n2, n3, ncol=3)
+  obj <- grid.arrange(n2, n3, ncol=2)
   if( save_ind ) png(paste0(savedir,"/Mosaics_Sim2.png"),width = 7, height = 4, units = "in", bg="transparent", res=300)
   grid.draw(obj)
   if( save_ind ) dev.off()
   
 }
-### Single-SNP analysis ----
+#* Upset plots ----
+{
+  desgs <- c("TZL","LM","GA")
+  
+inter_tot_sim2_cols <- subset(inter_tot_sim2[,-c(1,3,7:11)], OptCriterion==optMethod)
+  names(inter_tot_sim2_cols)[5:8] <- c("RDS", paste(optMethod, desgs, sep="\t"))
+  
+  setsnames <- names(inter_tot_sim2_cols)[5:8]
+  
+  if( save_ind ){
+    png(paste0(savedir,"/Upset_Sim2_",n2,".png"),width = 8, height = 5, units = "in", bg="transparent", res=300)
+    print(upset(subset(inter_tot_sim2_cols, n==n2 & it==381), nintersects=NA, sets = setsnames, order.by = "freq", group.by = "degree", set_size.show=FALSE, show.numbers=FALSE))
+    dev.off()  
+  }else{
+    print(upset(subset(inter_tot_sim2_cols, n==ss & it==381), nintersects=NA, sets = setsnames, order.by = "freq", group.by = "degree", set_size.show=FALSE, show.numbers=FALSE))
+  }
+  
+}
+# Single-SNP analysis ----
 #* Data prep ----
 {
   resOpt_sim2 <- resOpt_single
@@ -98,7 +138,7 @@ reg_sum$ID <- sapply(reg_sum$ID0,function(s){
   resOpt_sim2$Alloc <- relevel(resOpt_sim2$Alloc,ref="Complete")
   resOpt_sim2 <- merge(resOpt_single,Betas_df,by="Gpos",all.x=TRUE)
   resOpt_sim2$Beta1[is.na(resOpt_sim2$Beta1)] <- 0
-  resOpt_sim2$Alloc <- factor(resOpt_sim2$Alloc, levels = c("Complete","Opt.Lagr","Opt.GA","Combined","RDS","TZL"))
+  resOpt_sim2$Alloc <- factor(resOpt_sim2$Alloc, levels = c("Complete","LM","GA","Combined","RDS","TZL"))
   resOpt_sim2$Alloc_expr <- resOpt_sim2$Alloc
   levels(resOpt_sim2$Alloc_expr) <- expression("bold(Complete)","bold(LM)","bold(GA)","bold(Comb)","bold(RDS)","bold(TZL)")
 }
@@ -132,23 +172,20 @@ reg_sum$ID <- sapply(reg_sum$ID0,function(s){
 {
   summreps <- tab_sim2
   summreps$Sum <- paste0(formt(summreps$Mean_beta1,3)," (",formt(summreps$Mean_SEbeta1,3),")") 
-  summreps$Pow <- formt(summreps$t1e_power_Score*100,1)
+  #summreps$Pow <- formt(summreps$t1e_power_Score*100,1)
   #summreps$Pow <- formt(summreps$t1e_power_Wald*100,1)
-  #summreps$Pow <- formt(summreps$t1e_power_LRS*100,1)
+  summreps$Pow <- formt(summreps$t1e_power_LRS*100,1)
   summreps <- merge(reg_sum,summreps,by="Gpos")
   summreps$MAF <- formt(summreps$MAF*100,1)
   summreps <- summreps[order(as.numeric(as.character(summreps$Gpos))),]
   
-  cast(subset(summreps,ss==540),ID+MAF+r+r2+Dpr+Beta1~Alloc,value="Sum")
-  cast(subset(summreps,ss==540),ID+Beta1~Alloc,value="Pow")
+  cast(subset(summreps,ss==n2 & Alloc!="Combined" & !(Alloc%in%c("RDS","Complete") & OptCriterion!="Par-spec")),ID+MAF+r+r2+Dpr+Beta1~OptCriterion+Alloc,value="Sum")
   
-  ## sumarize other sample sizes but only causal variants:
-  cast(subset(summreps,ss!=540 & grepl("[*]",ID)),ss+ID0+MAF+r+r2+Dpr+Beta1~Alloc,value="Sum")
-  cast(subset(summreps,ss!=540 & grepl("[*]",ID)),ss+ID0+Beta1~Alloc,value="Pow")
+  cast(subset(summreps,ss==n2 & Alloc!="Combined" & !(Alloc%in%c("RDS","Complete") & OptCriterion!="Par-spec")),ID+Beta1~OptCriterion+Alloc,value="Pow")
   
 }
 
-### Conditional analysis ----
+# Conditional analysis ----
 #* Data prep ----
 {
   resOpt_sim2_cond <- resOpt_conditional
@@ -161,7 +198,7 @@ reg_sum$ID <- sapply(reg_sum$ID0,function(s){
   names(resOpt_sim2_cond)[which(names(resOpt_sim2_cond)%in%c("Beta1.x","Beta1.y"))] <- c("Beta1","Beta2_cond")
   resOpt_sim2_cond$Beta1[is.na(resOpt_sim2_cond$Beta1)] <- 0
   resOpt_sim2_cond$Beta2_cond[is.na(resOpt_sim2_cond$Beta2_cond)] <- 0
-  resOpt_sim2_cond$Alloc <- factor(resOpt_sim2$Alloc, levels = c("Complete","Opt.Lagr","Opt.GA","Combined","RDS","TZL"))
+  resOpt_sim2_cond$Alloc <- factor(resOpt_sim2$Alloc, levels = c("Complete","LM","GA","Combined","RDS","TZL"))
   resOpt_sim2_cond$Alloc_expr <- resOpt_sim2_cond$Alloc
   levels(resOpt_sim2_cond$Alloc_expr) <- expression("bold(Complete)","bold(LM)","bold(GA)","bold(Comb)","bold(RDS)","bold(TZL)")
   levels(resOpt_sim2_cond$OptCriterion) <- c("Par-spec")
@@ -225,9 +262,9 @@ reg_sum$ID <- sapply(reg_sum$ID0,function(s){
   summreps <- subset(tab_sim2cond, OptCriterion=="Par-spec")
   summreps$Sum <- paste0(formt(summreps$Mean_beta1,3)," (",formt(summreps$Mean_SEbeta1,3),")") 
   
-  summreps$Pow <- formt(summreps$t1e_power_Score*100,1)
+  # summreps$Pow <- formt(summreps$t1e_power_Score*100,1)
   #summreps$Pow <- formt(summreps$t1e_power_Wald*100,1)
-  #summreps$Pow <- formt(summreps$t1e_power_LRS*100,1)
+  summreps$Pow <- formt(summreps$t1e_power_LRS*100,1)
   summreps <- merge(reg_sum,summreps,by="Gpos")
   summreps$MAF <- formt(summreps$MAF*100,1)
   summreps <- summreps[order(as.numeric(as.character(summreps$Gpos))),]
@@ -244,9 +281,9 @@ reg_sum$ID <- sapply(reg_sum$ID0,function(s){
   summreps1 <- subset(tab_sim2cond1, OptCriterion=="Par-spec")
   summreps1$Sum <- paste0(formt(summreps1$Mean_beta2,3)," (",formt(summreps1$Mean_SEbeta2,3),")") 
   
-  summreps1$Pow <- formt(summreps1$t1e_power_Score*100,1)
+  # summreps1$Pow <- formt(summreps1$t1e_power_Score*100,1)
   #summreps$Pow <- formt(summreps$t1e_power_Wald*100,1)
-  #summreps$Pow <- formt(summreps$t1e_power_LRS*100,1)
+  summreps$Pow <- formt(summreps$t1e_power_LRS*100,1)
   summreps2 <- merge(reg_sum,summreps1,by.x="Gpos",by.y="Gcond")
   summreps2$MAF <- formt(summreps2$MAF*100,1)
   summreps2 <- summreps2[order(as.numeric(as.character(summreps2$Gpos))),]
@@ -277,7 +314,7 @@ reg_sum$ID <- sapply(reg_sum$ID0,function(s){
               cbind(Analysis="Single-variant",subset(resOpt_sim2)[,cols.sel]))
   df$Analysis <- relevel(df$Analysis, ref="Single-variant")
   
-  for(ph2ss in c(540,1250,2500)){
+  for(ph2ss in c(1250,2500)){
     boxplts_combined <- ggplot(subset(df,ss==ph2ss), aes(y=mlog10p,x=Kbp,group=Kbp)) + 
       geom_abline(intercept=-log10(0.05/29), slope=0, colour="red", size=.9, linetype=2) + 
       geom_boxplot(aes(fill=causal),color="grey25",position=position_dodge(width = 1.5),width=.5,outlier.size=0.4,lwd=0.2) + 

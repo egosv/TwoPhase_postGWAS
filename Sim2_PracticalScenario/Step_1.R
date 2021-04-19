@@ -1,5 +1,3 @@
-formula_Ha <- Y~G+fZ
-formula_Ho <- Y~fZ
 
 ### because we don't need to run the optimal designs for each G but rather for each Y, Z (fixed) combination, we split in two separate loops.
 if(0){ # For testing only
@@ -18,7 +16,11 @@ des_ids_all <- foreach(data_iter=isplit( dat_sim_all_sub, list(it=dat_sim_all_su
   disp_ols = summary(olsfit)$sigma
   resy = residuals(olsfit)
   
-  beta0 <- c(coef(olsfit)[1], 0, coef(olsfit)[-1]) 
+  beta0 <- if( optM==1 ){
+    c(coef(olsfit)[1], 0, coef(olsfit)[-1]) 
+  }else{
+    c(coef(olsfit)[1], 0, 0, coef(olsfit)[-1]) 
+  }
   
   # RDS
   order_resy = order(resy)
@@ -27,52 +29,68 @@ des_ids_all <- foreach(data_iter=isplit( dat_sim_all_sub, list(it=dat_sim_all_su
   
   data <- dat_sim[,c("Y","Z","fZ","S")] # all data without G (phase 1 data so to speak)
   numsce <- nrow(maf_ld_comb)
-  indx_it <- rep(list(NA),numsce)
   
-  # head(indx_it[,1:10])
-  FitnessArray <- array(NA, dim=c(4,numsce,numsce))
-  dimnames(FitnessArray)[[1]] <- c("Combined","TZL","Opt.Lagr","Opt.GA")
-  dimnames(FitnessArray)[[2]] <- paste0("Comb",1:numsce)
-  dimnames(FitnessArray)[[3]] <- paste0("Val",1:numsce)
-  
-  for ( j in 1:numsce ){ # j <- 1
-    # P_g <- maf_ld_comb1[j,1]
-    # LD.r <- maf_ld_comb1[j,2]
-    # beta0 <- c(Beta0,maf_ld_comb1[j,3], 0, 0) 
-    P_g <- maf_ld_comb[j,1]
-    LD.r <- maf_ld_comb[j,2]
+  ### Precompute IMs (and p_gz0)
+  IMlist <- lapply(1:numsce, function(j){
     
-    #p_Z <- data.frame(xtabs(~Z,dat_sim)/nrow(dat_sim)) 
-    err <- 0
-    ### calculate p_gz using MAF_g, LD and available data from Z
-    p_gz0 <- tryCatch(p_gz_func(p_Z, P_g, LD.r, "G", "Z"), error=function(e){print(e); err <<- 1; return(tryCatch(p_gz_func(mean(Z)/2, P_g, LD.r, "G", "Z"),error=function(e){NULL})) })
-    if( is.null(p_gz0) ){
-      err <<- 2
-      ### since no data on G is available and the above didin't work, simulate G independently from Z.
-      G_rand <- sample(0:2,nrow(dat_sim),replace=TRUE,prob=c((1-P_g)^2,2*(1-P_g)*P_g,P_g^2))
-      p_gz0 <- data.frame(xtabs(~G_rand+Z,dat_sim))
-      p_gz0$Freq <- p_gz0$Freq/sum(p_gz0$Freq)
-      names(p_gz0) <- c("G","Z","q")
-      p_gz0$G <- as.numeric(as.character(p_gz0$G))
-      p_gz0$Z <- as.numeric(as.character(p_gz0$Z))
+    ### calculate p_gz using AF and LD and available data from Z
+    if( optM==1 ){
+      pZ <- 1-mean(Z)/2
+      pG <- 1-maf_ld_comb$P_g[j]
+      LDj <- cbind(1,2, maf_ld_comb$LD.r[j])
+      p_gz0 <- suppressMessages(multilocus.Pgz(2, p=c(pZ, pG), LD = LDj))
+
+    }else{
+      pZ <- 1-mean(Z)/2
+      pG1 <- 1-maf_ld_comb$P_g1[j]
+      pG2 <- 1-maf_ld_comb$P_g2[j]
+      LDj <- rbind(cbind(1,2, maf_ld_comb$LD.rZG1[j]), 
+                   cbind(1,3, maf_ld_comb$LD.rZG2[j]), 
+                   cbind(2,3, maf_ld_comb$LD.rG1G2[j]) )
+      p_gz0 <- suppressMessages(multilocus.Pgz(3, p=c(pZ, pG1, pG2), LD = LDj))
+      
     }
+    
     ## error objects for the optimal allocations
     R3.err <- 0; R4.err <-0
     
-    IM <- obsIM.R(formula=Y~G+fZ,miscov=~G,auxvar=~Z,family=gaussian,data,beta=beta0,p_gz=p_gz0,disp=disp_ols)
     
-    # TZL 
+    IM <- obsIM.R(formula=formula_Ha, miscov=miscov_formula, auxvar=~Z, family=gaussian, data, beta=beta0, p_gz=p_gz0, disp=disp_ols)
+    
+    list(IM=IM,p_gz0=p_gz0)
+  })
+  
+  ### Compute the designs 
+  indx_it <- lapply(1:numsce, function(j){
+    # j <- 1
+    IM <- IMlist[[j]]$IM
+    p_gz0 <- IMlist[[j]]$p_gz0
+    
+    ## error objects for the optimal allocations
+    R3.err <- 0; R4.err <-0
+    
+    # data.frame(xtabs(strataformula,dat_sim))
+    # TZL - OPT
     ## var G/Z
     p_z <- aggregate(q~Z, data = p_gz0, FUN=sum)
     names(p_z)[2] <- "Freq"
     p_g_z <- merge(p_gz0, p_z, by="Z")
     p_g_z$qcond <- p_g_z$q/p_g_z$Freq
-    p_g_z$E1 <- with(p_g_z, G*qcond)
-    p_g_z$E2 <- with(p_g_z, G^2*qcond)
-    varG_Z = do.call(rbind,by(p_g_z,INDICES=p_g_z$Z,function(x){
-      c(Z=x$Z[1],var=sum(x$E2)-sum(x$E1)^2)
+    ### compute var(G|Z) [or the corresponding optimality criterion if a matrix]
+    varG_Z = do.call(rbind, by(p_g_z, INDICES=p_g_z[,"Z"],function(x){
+      Xmat <- x[, Gs, drop=F]*sqrt(x$qcond)
+      EXmat <- colSums(x[, Gs, drop=F]*x$qcond)
+      vcovmat <- t(Xmat) %*% as.matrix(Xmat) - EXmat %*% t(EXmat)
+      
+      sumval <- twoPhaseGAS:::.optMsure(optMethod)(vcovmat, Kind)
+      c(Z=x[1,"Z"],var=sumval)
     }))
-    resyopt = resy*sqrt(varG_Z[match(dat_sim$Z, varG_Z[,"Z"]),"var"])
+    ### scale the residuals
+    resyopt <- if( optMethod=="Par-spec" ){
+      resy*sqrt(varG_Z[match(dat_sim$Z, varG_Z[,"Z"]),"var"])
+    }else{
+      resy*varG_Z[match(dat_sim$Z, varG_Z[,"Z"]),"var"]
+    }
     order_resyopt = order(resyopt)
     phase2_id_opt = c(order_resyopt[1:(n2/2)], order_resyopt[(N-(n2/2)+1):N])
     R2 <- 1*( 1:N %in% phase2_id_opt )
@@ -102,11 +120,10 @@ des_ids_all <- foreach(data_iter=isplit( dat_sim_all_sub, list(it=dat_sim_all_su
     })
     R0 <- 1*(1:N %in% pop2a[,which(fit2 == min(fit2) )])
     
-    opt.prop <- tryCatch(optimTP.LM(formula=Y~G+fZ,miscov=~G,auxvar=~Z,strata=strataformula,family=gaussian,n=n2,data,beta=beta0,p_gz=p_gz0,disp=disp_ols,optimMeasure=optMethod,K.idx=Kind),error=function(e){print(e); cat("Error in optimTP.LM on iteration:",it,", using same sampling fraction for all strata instead.\n");
+    opt.prop <- tryCatch(optimTP.LM(formula=formula_Ha,miscov=miscov_formula,auxvar=~Z,strata=strataformula,family=gaussian,n=n2,data,beta=beta0,p_gz=p_gz0,disp=disp_ols,optimMeasure=optMethod,K.idx=Kind),error=function(e){print(e); cat("Error in optimTP.LM on iteration:",it,", using same sampling fraction for all strata instead.\n");
       R3.err <<- 1;
       stratadf <- data.frame(xtabs(strataformula,data=data))
       stratadf$prR_cond_optim <- n2/N; return(stratadf)})
-    # R3 <- BSS(samp.fracs=opt.prop$prR_cond_optim,n2,data,strataformula)$R
     
     pop3a <- sapply(1:100,function(x){
       sa <- which(BSS(samp.fracs=opt.prop$prR_cond_optim,n2,data,strataformula)$R==1)
@@ -128,29 +145,34 @@ des_ids_all <- foreach(data_iter=isplit( dat_sim_all_sub, list(it=dat_sim_all_su
     ## LM
     pop3 <- pop3a[,order(fit3)[1:19]]
     
-    GA.sol <- tryCatch(optimTP.GA(ncores=1,formula=formula_Ha,miscov=~G,auxvar=~Z,family=gaussian,n=n2,data,beta=beta0,p_gz=p_gz0,disp=NULL,ga.popsize=60,ga.propelit=0.9,ga.proptourney=0.9,ga.ngen=500,ga.mutrate=0.001,ga.initpop=t(cbind(pop1,pop2,pop3,phase2_id_rds)),optimMeasure=optMethod,K.idx=Kind,seed=1),error=function(e){print(e); cat("Error in optimJTC_GA on iteration:",it,", using SRS instead.\n");
+    GA.sol <- tryCatch(optimTP.GA(ncores=1,formula=formula_Ha,miscov=miscov_formula,auxvar=~Z,family=gaussian,n=n2,data,beta=beta0,p_gz=p_gz0,disp=NULL,ga.popsize=60,ga.propelit=0.9,ga.proptourney=0.9,ga.ngen=500,ga.mutrate=0.001,ga.initpop=t(cbind(pop1,pop2,pop3,phase2_id_rds)),optimMeasure=optMethod,K.idx=Kind,seed=1),error=function(e){print(e); cat("Error in optimJTC_GA on iteration:",it,", using SRS instead.\n");
       R4.err <<- 1;
       return(list(bestsol=sample(N,n2)))})
     # library(kofnGA); plot(GA.sol)
     R4 <- rep(0,nrow(data)); R4[GA.sol$bestsol] <- 1
-    
-    indx_it[[j]] <- list(R0=R0,R2=R2,R3=R3,R4=R4)
-    
+
+    list(R0=R0,R2=R2,R3=R3,R4=R4)
+  })
+  
+  ### Evaluate the designs
+  FitnessArray <- array(NA, dim=c(4,numsce,numsce))
+  dimnames(FitnessArray)[[1]] <- c("Combined","TZL","Opt.Lagr","Opt.GA")
+  dimnames(FitnessArray)[[2]] <- paste0("Comb",1:numsce)
+  dimnames(FitnessArray)[[3]] <- paste0("Val",1:numsce)
+  
+  for ( j in 1:numsce ){ # j <- 1
+    R0 <- indx_it[[j]]$R0
+    R2 <- indx_it[[j]]$R2
+    R3 <- indx_it[[j]]$R3
+    R4 <- indx_it[[j]]$R4
     for( k in 1:numsce ){ # k <- 2
- 
-      P_g_b <- maf_ld_comb[k,1]
-      LD.r_b <- maf_ld_comb[k,2]
-      
-      p_gz0_b <- p_gz_func(p_Z, P_g_b, LD.r_b, "G", "Z")
-      
-      IM_b <- obsIM.R(formula=Y~G+fZ,miscov=~G,auxvar=~Z,family=gaussian,data,beta=beta0,p_gz=p_gz0_b,disp=disp_ols)
+      IM_b <- IMlist[[k]]$IM
       
       FitnessArray[1,j,k] <- fitnessTP(IM_b,Rj=R0,optimMeasure=optMethod,K.idx=Kind)
       FitnessArray[2,j,k] <- fitnessTP(IM_b,Rj=R2,optimMeasure=optMethod,K.idx=Kind)
       FitnessArray[3,j,k] <- fitnessTP(IM_b,Rj=R3,optimMeasure=optMethod,K.idx=Kind)
       FitnessArray[4,j,k] <- fitnessTP(IM_b,Rj=R4,optimMeasure=optMethod,K.idx=Kind)
     }
-    
   }
   
   indx <- apply(apply(FitnessArray,c(1,2), median),1,function(x){
@@ -187,7 +209,7 @@ des_ids_all <- foreach(data_iter=isplit( dat_sim_all_sub, list(it=dat_sim_all_su
                      c("N_n2"=sum(R4), error=NA, x4)
   )
   alloc.res <- data.frame(it=it,samp=sampl,ss=n2,
-                          alloc=c("Complete","Combined","RDS","TZL","Opt.Lagr","Opt.GA"),alloc.res)
+                          alloc=c("Complete","Combined","RDS","TZL","LM","GA"),alloc.res)
   
   alloc_ids <- data.frame(it=as.numeric(it))
   alloc_ids$R0 = list(R0)
