@@ -21,5 +21,11 @@ $PL/plink --bfile NFBC_dbGaP_20091127_hg19 --chr 1-22 \
 
 ## The command above will generate files NFBC66_GWAS_adj_hg19.XX.assoc.linear, where XX is the corresponding QT (TG, HDL, LDL, CRP, GLU, INS, BMI, SBP, DBP)
 
+## compute principal components
+$PL/plink --bfile NFBC_dbGaP_20091127_hg19 --indep 50 5 2 --out NFBC_dbGaP_20091127_hg19_indep
+
+$PL/plink --bfile NFBC_dbGaP_20091127_hg19 --extract NFBC_dbGaP_20091127_hg19_indep.prune.in --geno 0.01 --make-bed --out NFBC_dbGaP_20091127_hg19_pruned
+
+$PL/plink --bfile NFBC_dbGaP_20091127_hg19_pruned --pca 40 --out NFBC_dbGaP_20091127_hg19_pca
 
 

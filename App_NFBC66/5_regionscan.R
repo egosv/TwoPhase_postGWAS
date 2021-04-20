@@ -1,4 +1,3 @@
-#  Check for problematic values
 args=(commandArgs(TRUE))
 print(args)
 for(k in 1:length(args)){
@@ -13,12 +12,15 @@ GENE = c("GCKR", "LPL", "APOA5")[1]
 sf <- 3
 
 library(twoPhaseGAS)
-
 # if (!requireNamespace("BiocManager", quietly = TRUE))
 #   install.packages("BiocManager")
 # 
 # BiocManager::install("snpStats")
 library(snpStats)
+library(statmod)
+library(iterators)
+library(foreach)
+library(doSNOW)
 
 load(file=paste0("Phase2_indicators_sf=",sf,".RData"))
 
@@ -27,7 +29,9 @@ data_phase2$SexOCPG = factor(data_phase2$SexOCPG)
 
 ### I'm going to use only the two genes that were actually identified by GWAS
 snp = c("rs1260326", "rs10096633")
- 
+
+### select 4 PCs
+pcs <- paste0("PC",1:4)
 
 ### load sequence data and select only the ones with R==1 
 seq_SNPs <- read.plink(paste0(GENE,"_GotCloud_filteredPASS_flt"), na.strings = c("-9"), sep = ".")
@@ -44,9 +48,6 @@ seq_SNPs$map = seq_SNPs$map[seq_SNPs$map$snp.name%in%rownames(SNPs_sum_flt),]
 ## head(seq_SNPs$map$snp.name)
 ## head(colnames(seq_SNPs$genotypes))
 
-library(iterators)
-library(foreach)
-library(doSNOW)
 
 cl <- makeCluster(detectCores()-1, type="SOCK", outfile="")
 
@@ -55,10 +56,11 @@ registerDoSNOW(cl)
 ptm <- Sys.time()
 # p<-101; G0 <- seq_SNPs$genotypes[,p,drop=FALSE]
 
-formula_Ha <- as.formula(paste0("Y ~ G +", paste0(snp,collapse="+") ,"+ SexOCPG"))
-formula_Ho <- as.formula(paste0("Y ~ ", paste0(snp,collapse="+") ,"+ SexOCPG"))
-vars_1 = c("Y","G","StrataZ",snp,"S","SexOCPG")
-vars_0 = c("Y","StrataZ",snp,"S","SexOCPG")
+formula_Ha <- as.formula(paste0("Y ~ G +", paste0(c(snp,pcs),collapse="+") ,"+ SexOCPG"))
+formula_Ho <- as.formula(paste0("Y ~ ", paste0(c(snp,pcs),collapse="+") ,"+ SexOCPG"))
+vars_1 = c("Y","G","StrataZ",snp,pcs,"S","SexOCPG")
+vars_0 = c("Y","StrataZ",snp,pcs,"S","SexOCPG")
+
 
 ptm <- Sys.time()
 scanresults <- foreach(G0=iter(seq_SNPs$genotypes,by='column'), p=icount(), .combine='rbind', .inorder=F, .noexport=NULL, .verbose=T, .packages = c("statmod","twoPhaseGAS")) %dopar% {

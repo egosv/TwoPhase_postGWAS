@@ -6,6 +6,20 @@ for(k in 1:length(args)){
 
 setwd("/out/path/processed_data/")
 
+### Packages needed ----
+## install.packages(c('enrichwith', 'nloptr', 'dfoptim'))
+## install.packages("twoPhaseGAS_1.07.tar.gz",repos = NULL, type="source")
+library(twoPhaseGAS)
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#   install.packages("BiocManager")
+# 
+# BiocManager::install("snpStats")
+library(snpStats)
+library(iterators)
+library(foreach)
+library(doSNOW)
+library(rlecuyer)
+
 ### Read data ----
 # Study accession: phs000276.v2.p1
 # Table accession: pht002005.v2.p1
@@ -65,12 +79,6 @@ Covariates_dat$SexOCPG <- factor(mapply(function(o,p,s){
 },o=as.character(Covariates_dat$OC),p=as.character(Covariates_dat$PG),s=Covariates_dat$Sex))
 
 #### Load GWAS data ----
-# if (!requireNamespace("BiocManager", quietly = TRUE))
-#   install.packages("BiocManager")
-# 
-# BiocManager::install("snpStats")
-library(snpStats)
-
 ### Load results from the GWAS on TG
 GWAS_resadj_TG <- read.table(gzfile("NFBC66_GWAS_adj_hg19.TG.assoc.linear"),header = T)
 head(GWAS_resadj_TG)
@@ -114,6 +122,17 @@ Phase1_data <- Phase1_data[,-which(names(Phase1_data)%in%c("V1","V2"))]
 
 ### summary(Phase1_data)
 
+### Merge with principal components
+evec <- read.table("NFBC_dbGaP_20091127_hg19_pca.eigenvec")
+names(evec)[1:2] <- c("FID","IID")
+names(evec)[3:ncol(evec)] <- paste0("PC",1:(ncol(evec)-2))
+
+### use first 4 principal components in analysis
+pcs <- paste0("PC",1:4)
+
+Phase1_data <- merge(Phase1_data, evec, by=c("FID","IID"))
+
+
 #### I'm going to focus on TG, note that this phenotype can be stratified as follows:
 Phase1_data$S <- sapply(Phase1_data$TG.orig,function(x){
   if(is.na(x)) return(NA)
@@ -143,11 +162,8 @@ colMeans(Phase1_data[,grep("^rs",names(Phase1_data))],na.rm = T)/2
 ### I'm using only the two genes that were actually identified by GWAS
 snp = c("rs1260326", "rs10096633")
 
-## install.packages(c('enrichwith', 'nloptr', 'dfoptim'))
-## install.packages("twoPhaseGAS_1.05.tar.gz",repos = NULL, type="source")
-library(twoPhaseGAS)
 
-Phase1_data_nonmiss <- na.omit(Phase1_data[,c("FID","TG",snp,"S","Has_CTS","Sex", "OC", "PG", "SexOCPG")]) ## This is the GWAS-SNP for GCKR
+Phase1_data_nonmiss <- na.omit(Phase1_data[,c("FID","TG",snp,"S","Has_CTS","Sex", "OC", "PG", "SexOCPG", pcs)]) ## This is the GWAS-SNP for GCKR
 strataZ <- survival:::strata(Phase1_data_nonmiss[,snp])
 Phase1_data_nonmiss$StrataZ <- as.numeric(factor(strataZ,labels=1:length(levels(strataZ))))
 names(Phase1_data_nonmiss)[2] <- c("Y")
@@ -155,14 +171,14 @@ head(Phase1_data_nonmiss)
 dim(Phase1_data_nonmiss)
 
 ### select the phase 2 subjects from the ones who has CTS
-Phase1_data_nonmiss_wCTS <- Phase1_data_nonmiss[Phase1_data_nonmiss$Has_CTS=="Y",c("FID","Y","S",snp,"StrataZ","SexOCPG")]
+Phase1_data_nonmiss_wCTS <- Phase1_data_nonmiss[Phase1_data_nonmiss$Has_CTS=="Y",c("FID","Y","S",snp,pcs,"StrataZ","SexOCPG")]
 table(Phase1_data_nonmiss_wCTS[,snp[1]],Phase1_data_nonmiss_wCTS$S)
 table(Phase1_data_nonmiss_wCTS[,snp[2]],Phase1_data_nonmiss_wCTS$S)
 
 
 ### run GWAS regression to select the effects described in the application (assuming additive effect for the snps)
-regformula <- as.formula(paste0("Y~G+",paste0(snp,collapse="+"),"+SexOCPG"))
-GWASfit <- glm(as.formula(paste0("Y~",paste0(snp,collapse="+"),"+SexOCPG")),data=Phase1_data_nonmiss_wCTS,family=gaussian)
+regformula <- as.formula(paste0("Y~G+",paste0(c(snp,pcs),collapse="+"),"+SexOCPG"))
+GWASfit <- glm(as.formula(paste0("Y~",paste0(c(snp,pcs),collapse="+"),"+SexOCPG")),data=Phase1_data_nonmiss_wCTS,family=gaussian)
 resy = residuals(GWASfit)
 beta0 <- c(coef(GWASfit)[1],0,coef(GWASfit)[-1])
 disp0 <- summary(GWASfit)$dispersion
@@ -199,10 +215,6 @@ maf_ld_comb <- maf_ld_comb[!is.na(ind_comb),]
 maf_ld_comb <- merge(maf_ld_comb,Z.df)
 numsce <- nrow(maf_ld_comb)
 
-library(iterators)
-library(foreach)
-library(doSNOW)
-library(rlecuyer)
 
 cl <- makeCluster(parallel:::detectCores(), type="SOCK", outfile="")
 
