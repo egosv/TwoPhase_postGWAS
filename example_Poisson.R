@@ -1,4 +1,5 @@
 ### This is an example on how to obtain the GA design described in Espin-Garcia, Craiu, and Bull (2021) under Poisson regression.
+### It can be run by simply sourcing it, i.e. source('example_Poisson.R'), once the following two packages are installed.
 
 # install.packages("../twoPhaseGAS_1.07.tar.gz", type="source", repos = NULL)
 library(twoPhaseGAS)
@@ -218,4 +219,15 @@ names(dat_sim)[names(dat_sim)=="G"] <- gcol # put back to the original value
 }    
 
 print(res)
+### Expected output:
+#          Beta1 snp Analysis     beta1       var_beta1          W            S           LR
+# out_com    0.1  G0 Complete -0.0099435819 0.0002213691  0.446651419  0.446655131  0.447548135
+# res1       0.1  G0   ML-SRS  0.0011314560 0.0005107608  0.002506443  0.002510957  0.002511346
+# res2       0.1  G0    ML-GA -0.0007389052 0.0004921429  0.001109395  0.001108488  0.001107784
+# out_nai    0.1  G0    Naive  0.0011862183 0.0005349665  0.002630284  0.002630284  0.002629682
+# out_com1   0.1  G1 Complete  0.1051296161 0.0004948109  22.336283169 22.353003255 22.573748809
+# res11      0.1  G1   ML-SRS  0.0678366207 0.0011091880  4.148807181  4.132324066  4.158262909
+# res21      0.1  G1    ML-GA  0.1170936479 0.0005939658  23.083689002 23.050909698 23.322514207
+# out_nai1   0.1  G1    Naive  0.0742660816 0.0012214881  4.515353653  4.516995817  4.546878257
+
 ### In this example, ML under GA reaches almost the same power as the complete data analysis and is orders of magnitude more significant than both ML under SRS and the Naive analyses.
